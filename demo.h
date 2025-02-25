@@ -7,6 +7,9 @@
 #include <string>
 #include <Eigen/Dense>
 #include <cmath>
+#include <torch/torch.h>
+#include <map>
+
 
 namespace pose {
     struct ColorStyle {
@@ -32,8 +35,8 @@ namespace pose {
     private:
         std::string model_name;
 
-        static constexpr int Input_width = 192;
-        static constexpr int Input_height = 256;
+        static constexpr int Input_width = 512;
+        static constexpr int Input_height = 512;
 
         ColorStyle color_style_;
 
@@ -104,5 +107,19 @@ namespace pose {
         std::vector<float> taylor(const cv::Mat& heatmap, const std::vector<float>& coord);
 
         cv::Mat convert_tensor_to_mat(float* tensor_data, const std::vector<int64_t>& dims);
+
+        std::tuple<std::vector<torch::Tensor>, std::vector<torch::Tensor>, std::vector<torch::Tensor>>
+
+        get_multi_stage_outputs_onnx(
+            const std::vector<OrtValue*>& outputs,
+            const std::vector<int64_t>* size_projected = nullptr);
+
+        torch::Tensor convert_ort_to_torch(OrtValue* ort_tensor);
+
+        std::pair<torch::Tensor, std::vector<torch::Tensor>>
+            aggregate_results_onnx(
+                std::vector<torch::Tensor>& tags_list,
+                const std::vector<torch::Tensor>& heatmaps,
+                const std::vector<torch::Tensor>& tags);
     };
 }

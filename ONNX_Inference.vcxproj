@@ -104,14 +104,14 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\opencv\build\include;C:\Program Files\NVIDIA Corporation\NvToolsExt\include;$(CUDA_PATH)\include;$(SolutionDir)\external\onnx\include;$(SolutionDir)\include;C:\Users\user\source\repos\ONNX_Inference\external\eigen-3.4.0;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\opencv\build\include;C:\Program Files\NVIDIA Corporation\NvToolsExt\include;$(CUDA_PATH)\include;$(SolutionDir)\external\onnx\include;$(SolutionDir)\include;C:\Users\user\source\repos\ONNX_Inference\external\eigen-3.4.0;C:\libtorch\debug\include;C:\libtorch\debug\include\torch\csrc\api\include;%(AdditionalIncludeDirectories);C:\Users\user\source\repos\ONNX_Inference\external\munkres-cpp\src\munkres-cpp</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(SolutionDir)\lib\$(Platform)\$(Configuration);C:\opencv\build\x64\vc16\lib;$(SolutionDir)\external\onnx\lib;C:\Program Files\NVIDIA Corporation\NvToolsExt\lib\x64;$(CUDA_PATH)\lib\x64</AdditionalLibraryDirectories>
-      <AdditionalDependencies>Onnxrt.lib;Util.lib;nvToolsExt64_1.lib;cuda.lib;cudart_static.lib;cufft.lib;curand.lib;cublas.lib;cusolver.lib;cusparse.lib;onnxruntime.lib;onnxruntime_providers_cuda.lib;onnxruntime_providers_shared.lib;onnxruntime_providers_tensorrt.lib;nvinfer.lib;nvinfer_dispatch.lib;nvinfer_lean.lib;nvinfer_plugin.lib;nvinfer_vc_plugin.lib;nvonnxparser.lib;nvparsers.lib;opencv_world4100d.lib;onnxruntime.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)\lib\$(Platform)\$(Configuration);C:\opencv\build\x64\vc16\lib;$(SolutionDir)\external\onnx\lib;C:\Program Files\NVIDIA Corporation\NvToolsExt\lib\x64;$(CUDA_PATH)\lib\x64;C:\libtorch\debug\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>Onnxrt.lib;Util.lib;nvToolsExt64_1.lib;cuda.lib;cudart_static.lib;cufft.lib;curand.lib;cublas.lib;cusolver.lib;cusparse.lib;onnxruntime.lib;onnxruntime_providers_cuda.lib;onnxruntime_providers_shared.lib;onnxruntime_providers_tensorrt.lib;nvinfer.lib;nvinfer_dispatch.lib;nvinfer_lean.lib;nvinfer_plugin.lib;nvinfer_vc_plugin.lib;nvonnxparser.lib;nvparsers.lib;opencv_world4100d.lib;torch.lib;torch_cpu.lib;c10.lib;torch_cuda.lib;caffe2_nvrtc.lib;c10_cuda.lib;asmjit.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -123,15 +123,15 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\opencv\build\include;C:\Program Files\NVIDIA Corporation\NvToolsExt\include;$(CUDA_PATH)\include;$(SolutionDir)\external\onnx\include;$(SolutionDir)\include;C:\Users\user\source\repos\ONNX_Inference\external\eigen-3.4.0;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\opencv\build\include;C:\Program Files\NVIDIA Corporation\NvToolsExt\include;$(CUDA_PATH)\include;$(SolutionDir)\external\onnx\include;$(SolutionDir)\include;C:\Users\user\source\repos\ONNX_Inference\external\eigen-3.4.0;C:\libtorch\release\include;C:\libtorch\release\include\torch\csrc\api\include;%(AdditionalIncludeDirectories);C:\Users\user\source\repos\ONNX_Inference\external\munkres-cpp\src\munkres-cpp</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(SolutionDir)\lib\$(Platform)\$(Configuration);C:\opencv\build\x64\vc16\lib;$(SolutionDir)\external\onnx\lib;C:\Program Files\NVIDIA Corporation\NvToolsExt\lib\x64;$(CUDA_PATH)\lib\x64</AdditionalLibraryDirectories>
-      <AdditionalDependencies>Onnxrt.lib;Util.lib;nvToolsExt64_1.lib;cuda.lib;cudart_static.lib;cufft.lib;curand.lib;cublas.lib;cusolver.lib;cusparse.lib;onnxruntime.lib;onnxruntime_providers_cuda.lib;onnxruntime_providers_shared.lib;onnxruntime_providers_tensorrt.lib;nvinfer.lib;nvinfer_dispatch.lib;nvinfer_lean.lib;nvinfer_plugin.lib;nvinfer_vc_plugin.lib;nvonnxparser.lib;nvparsers.lib;opencv_world4100.lib;onnxruntime.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)\lib\$(Platform)\$(Configuration);C:\opencv\build\x64\vc16\lib;$(SolutionDir)\external\onnx\lib;C:\Program Files\NVIDIA Corporation\NvToolsExt\lib\x64;$(CUDA_PATH)\lib\x64;C:\libtorch\release\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>Onnxrt.lib;Util.lib;nvToolsExt64_1.lib;cuda.lib;cudart_static.lib;cufft.lib;curand.lib;cublas.lib;cusolver.lib;cusparse.lib;onnxruntime.lib;onnxruntime_providers_cuda.lib;onnxruntime_providers_shared.lib;onnxruntime_providers_tensorrt.lib;nvinfer.lib;nvinfer_dispatch.lib;nvinfer_lean.lib;nvinfer_plugin.lib;nvinfer_vc_plugin.lib;nvonnxparser.lib;nvparsers.lib;opencv_world4100.lib;torch.lib;torch_cpu.lib;c10.lib;torch_cuda.lib;caffe2_nvrtc.lib;c10_cuda.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -139,9 +139,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="demo.h" />
+    <ClInclude Include="group.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="demo.cpp" />
+    <ClCompile Include="group.cpp" />
     <ClCompile Include="Main.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -1,5 +1,14 @@
 #include "demo.h"
+#include "matrix.h"
+#include "matrix_base.h"
+#include "munkres.h"
+#include "utils.h"
+#include "group.h"
 #include <Util/Macrofunc.h>
+#include <vector>
+#include <map>
+#include <functional>
+#include <torch/torch.h>
 
 using namespace pose;
 
@@ -240,9 +249,6 @@ void Demo::PostprocessOutputs_ViTPose(
     int height = dims[2];
     int width = dims[3];
 
-    keypoints.clear();
-    scores.clear();
-
     // Reshape heatmap data into separate cv::Mat for each batch
     for (int n = 0; n < batch_size; n++) {
         cv::Mat batch_heatmap(num_joints, height * width, CV_32F);
@@ -300,72 +306,186 @@ void Demo::PostprocessOutputs_HigherHRNet(
     int left_pad,
     int top_pad) {
 
-    const int NUM_KEYPOINTS = 17; // COCO keypoints 
+    const int NUM_KEYPOINTS = 17; // COCO keypoints
+    std::vector<int64_t> base_size = { Input_width, Input_height };
+    std::vector<int64_t> center = { Input_width / 2, Input_height / 2 };
+    std::vector<float> scale = { Input_width / 200.0, Input_height / 200.0 };
+    std::vector<torch::Tensor> tags_list;
 
-    // Get heatmaps and tags from model 
-    float* heatmap_data = nullptr;
-    float* tag_data = nullptr;
-    Ort::ThrowOnError(g_ort->GetTensorMutableData(outputs[1], (void**)&heatmap_data));
-    Ort::ThrowOnError(g_ort->GetTensorMutableData(outputs[1], (void**)&tag_data));
+    auto [torch_outputs, heatmaps, tags] = get_multi_stage_outputs_onnx(outputs, &base_size);
 
-    // Get tensor info
-    OrtTensorTypeAndShapeInfo* tensor_info;
-    Ort::ThrowOnError(g_ort->GetTensorTypeAndShape(outputs[1], &tensor_info));
 
-    // Get shape
-    size_t dim_count;
-    Ort::ThrowOnError(g_ort->GetDimensionsCount(tensor_info, &dim_count));
-    std::vector<int64_t> dims(dim_count);
-    Ort::ThrowOnError(g_ort->GetDimensions(tensor_info, dims.data(), dim_count));
 
-    int batch_size = dims[0];
-    int num_joints = dims[1];
-    int height = dims[2];
-    int width = dims[3];
 
+    /*
+    // Debug intermediate outputs
+    std::cout << "\n=== Debug Intermediate Outputs ===" << std::endl;
+    std::cout << "torch_outputs size: " << torch_outputs.size() << std::endl;
+    for (size_t i = 0; i < torch_outputs.size(); i++) {
+        std::cout << "torch_output " << i << " shape: ";
+        for (const auto& dim : torch_outputs[i].sizes()) {
+            std::cout << dim << " ";
+        }
+        std::cout << std::endl;
+        std::cout << "torch_output " << i << " min/max: "
+            << torch_outputs[i].min().item<float>() << "/"
+            << torch_outputs[i].max().item<float>() << std::endl;
+    }
+
+    std::cout << "\nheatmaps size: " << heatmaps.size() << std::endl;
+    for (size_t i = 0; i < heatmaps.size(); i++) {
+        std::cout << "heatmap " << i << " shape: ";
+        for (const auto& dim : heatmaps[i].sizes()) {
+            std::cout << dim << " ";
+        }
+        std::cout << std::endl;
+        std::cout << "heatmap " << i << " min/max: "
+            << heatmaps[i].min().item<float>() << "/"
+            << heatmaps[i].max().item<float>() << std::endl;
+    }
+
+    std::cout << "\ntags size: " << tags.size() << std::endl;
+    for (size_t i = 0; i < tags.size(); i++) {
+        std::cout << "tag " << i << " shape: ";
+        for (const auto& dim : tags[i].sizes()) {
+            std::cout << dim << " ";
+        }
+        std::cout << std::endl;
+        std::cout << "tag " << i << " min/max: "
+            << tags[i].min().item<float>() << "/"
+            << tags[i].max().item<float>() << std::endl;
+    }
+    */
+
+
+    auto [final_heatmaps, final_tags_list] = aggregate_results_onnx(tags_list, heatmaps, tags);
+
+
+
+    /*
+    // Debug final outputs
+    std::cout << "\n=== Debug Final Outputs ===" << std::endl;
+    std::cout << "final_heatmaps shape: ";
+    for (const auto& dim : final_heatmaps.sizes()) {
+        std::cout << dim << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "final_heatmaps min/max: "
+        << final_heatmaps.min().item<float>() << "/"
+        << final_heatmaps.max().item<float>() << std::endl;
+
+    std::cout << "\nfinal_tags_list size: " << final_tags_list.size() << std::endl;
+    for (size_t i = 0; i < final_tags_list.size(); i++) {
+        std::cout << "final_tag " << i << " shape: ";
+        for (const auto& dim : final_tags_list[i].sizes()) {
+            std::cout << dim << " ";
+        }
+        std::cout << std::endl;
+        std::cout << "final_tag " << i << " min/max: "
+            << final_tags_list[i].min().item<float>() << "/"
+            << final_tags_list[i].max().item<float>() << std::endl;
+    }
+    std::cout << "============================\n" << std::endl;
+    */
+
+
+
+
+    // Concatenate tags along dimension 4
+    torch::Tensor tags_tensor = torch::cat(final_tags_list, 4);
+
+    /*
+    // Print the shape of the concatenated tensor
+    std::cout << "\nAfter concatenation:" << std::endl;
+    std::cout << "tags_tensor shape: ";
+    for (const auto& dim : tags_tensor.sizes()) {
+        std::cout << dim << " ";
+    }
+    std::cout << std::endl;
+    */
+
+    HeatmapParser parser(nullptr);
+    auto [grouped, parsed_scores] = parser.parse(final_heatmaps, tags_tensor, true, true);
+
+    /*
+    // 디버깅 코드 추가
+    std::cout << "\n=== Debug Parse Results ===\n";
+
+    // grouped 정보 출력
+    std::cout << "grouped size: " << grouped.size() << std::endl;
+    if (!grouped.empty()) {
+        auto& first_batch = grouped[0];
+        std::cout << "First batch shape: [" << first_batch.size(0) << ", "
+            << first_batch.size(1) << ", " << first_batch.size(2) << "]" << std::endl;
+        std::cout << "Number of people detected: " << first_batch.size(0) << std::endl;
+
+    }
+    else {
+        std::cout << "No people detected in grouped" << std::endl;
+    }
+
+    // parsed_scores 정보 출력
+    std::cout << "\nparsed_scores size: " << parsed_scores.size() << std::endl;
+    if (!parsed_scores.empty()) {
+        std::cout << "Scores: ";
+        for (size_t i = 0; i < std::min(parsed_scores.size(), static_cast<size_t>(5)); i++) {
+            std::cout << parsed_scores[i] << " ";
+        }
+        if (parsed_scores.size() > 5) {
+            std::cout << "... and " << (parsed_scores.size() - 5) << " more scores";
+        }
+        std::cout << std::endl;
+    }
+
+    std::cout << "=========================\n" << std::endl;
+    */
+
+    // Clear existing keypoints and scores
     keypoints.clear();
     scores.clear();
 
-    std::vector<cv::Point2f> current_person;
-    current_person.reserve(NUM_KEYPOINTS);
-    float current_score = 0.0f;
+    // If no people detected, return
+    if (grouped.empty() || grouped[0].size(0) == 0) {
+        return;
+    }
 
-    // Find peaks in each joint heatmap
-    for (int j = 0; j < NUM_KEYPOINTS; j++) {
-        float max_val = -1;
-        int max_x = 0, max_y = 0;
+    // Process each person in the first batch
+    auto& batch = grouped[0];
+    int num_people = batch.size(0);
+    int num_joints = batch.size(1);
 
-        // Find maximum value position in heatmap
-        for (int h = 0; h < height; h++) {
-            for (int w = 0; w < width; w++) {
-                int idx = j * height * width + h * width + w;
-                float val = heatmap_data[idx];
-                if (val > max_val) {
-                    max_val = val;
-                    max_x = w;
-                    max_y = h;
-                }
+    for (int person_idx = 0; person_idx < num_people; person_idx++) {
+        std::vector<cv::Point2f> person_keypoints;
+        float person_score = parsed_scores[person_idx];
+
+        for (int joint_idx = 0; joint_idx < num_joints; joint_idx++) {
+            // Get coordinates from the tensor
+            float x = batch[person_idx][joint_idx][0].item<float>();
+            float y = batch[person_idx][joint_idx][1].item<float>();
+            float conf = batch[person_idx][joint_idx][2].item<float>();
+
+            // Scale back to original image space
+            float scaled_x = x  * scale_x - left_pad;
+            float scaled_y = y  * scale_y - top_pad;
+
+            // Only add keypoint if confidence is above 0
+            if (conf > 0) {
+                person_keypoints.push_back(cv::Point2f(scaled_x, scaled_y));
+            }
+            else {
+                // Add an invalid point for consistency (will be skipped during drawing)
+                person_keypoints.push_back(cv::Point2f(-1, -1));
             }
         }
 
-        if (max_val > 0.3f) {  // confidence threshold
-            current_person.push_back(cv::Point2f(
-                max_x * 2 * scale_x - left_pad,
-                max_y * 2 * scale_y - top_pad
-            ));
-            current_score += max_val;
-        }
-        else {
-            current_person.push_back(cv::Point2f(-1, -1));  // invalid point
+        // Add this person if we have any valid keypoints
+        if (!person_keypoints.empty()) {
+            keypoints.push_back(person_keypoints);
+            scores.push_back(person_score);
         }
     }
+    
 
-    if (current_person.size() > 0) {
-        keypoints.push_back(current_person);
-        scores.push_back(current_score / NUM_KEYPOINTS);
-    }
-
-    g_ort->ReleaseTensorTypeAndShapeInfo(tensor_info);
 }
 
 void Demo::DrawPoses(
@@ -403,6 +523,128 @@ void Demo::DrawPoses(
             }
         }
     }
+}
+
+std::pair<std::vector<std::vector<std::vector<float>>>, std::vector<std::vector<std::vector<float>>>>
+Demo::get_final_preds_no_transform(const std::vector<cv::Mat>& heatmaps) {
+    PredictionResult pred_result = get_max_preds(heatmaps);
+    std::vector<cv::Mat> heatmaps_processed = heatmaps;
+
+    // post-processing
+    heatmaps_processed = gaussian_blur(heatmaps_processed, 11);
+
+    for (auto& heatmap : heatmaps_processed) {
+        cv::max(heatmap, 1e-10, heatmap);
+        cv::log(heatmap, heatmap);
+    }
+
+    // Apply taylor expansion
+    for (size_t n = 0; n < pred_result.coords.size(); n++) {
+        for (size_t p = 0; p < pred_result.coords[n].size(); p++) {
+            std::vector<float> refined_coord = taylor(heatmaps_processed[n], pred_result.coords[n][p]);
+            pred_result.coords[n][p] = refined_coord;
+        }
+    }
+
+    return std::make_pair(pred_result.coords, pred_result.maxvals);
+}
+
+PredictionResult Demo::get_max_preds(const std::vector<cv::Mat>& heatmaps) {
+    PredictionResult result;
+    int batch_size = heatmaps.size();
+    int num_joints = heatmaps[0].rows;
+    int width = 48;
+
+    result.coords.resize(batch_size, std::vector<std::vector<float>>(num_joints, std::vector<float>(2)));
+    result.maxvals.resize(batch_size, std::vector<std::vector<float>>(num_joints, std::vector<float>(1)));
+
+    for (int n = 0; n < batch_size; n++) {
+        for (int p = 0; p < num_joints; p++) {
+            cv::Point maxLoc;
+            double maxVal;
+            cv::minMaxLoc(heatmaps[n].row(p), nullptr, &maxVal, nullptr, &maxLoc);
+
+            result.maxvals[n][p][0] = maxVal;
+            result.coords[n][p][0] = maxLoc.x % width;
+            result.coords[n][p][1] = maxLoc.x / width;
+
+            if (maxVal <= 0) {
+                result.coords[n][p][0] = 0.0f;
+                result.coords[n][p][1] = 0.0f;
+            }
+        }
+    }
+
+    return result;
+}
+
+std::vector<cv::Mat> Demo::gaussian_blur(std::vector<cv::Mat>& heatmaps, int kernel) {
+    int border = (kernel - 1) / 2;
+
+    for (size_t i = 0; i < heatmaps.size(); i++) {
+        double origin_max;
+        cv::minMaxLoc(heatmaps[i], nullptr, &origin_max);
+
+        cv::Mat padded;
+        cv::copyMakeBorder(heatmaps[i], padded, border, border, border, border, cv::BORDER_CONSTANT, 0);
+        cv::GaussianBlur(padded, padded, cv::Size(kernel, kernel), 0);
+
+        cv::Mat cropped = padded(cv::Range(border, padded.rows - border),
+            cv::Range(border, padded.cols - border));
+
+        double current_max;
+        cv::minMaxLoc(cropped, nullptr, &current_max);
+        cropped *= origin_max / current_max;
+
+        heatmaps[i] = cropped.clone();
+    }
+
+    return heatmaps;
+}
+
+std::vector<float> Demo::taylor(const cv::Mat& heatmap, const std::vector<float>& coord) {
+
+    std::vector<float> result = coord;
+    int px = static_cast<int>(coord[0]);
+    int py = static_cast<int>(coord[1]);
+
+    if (1 < px && px < heatmap.cols - 2 && 1 < py && py < heatmap.rows - 2) {
+        Eigen::Matrix2f hessian;
+        Eigen::Vector2f derivative;
+
+        float dx = 0.5f * (heatmap.at<float>(py, px + 1) - heatmap.at<float>(py, px - 1));
+        float dy = 0.5f * (heatmap.at<float>(py + 1, px) - heatmap.at<float>(py - 1, px));
+        float dxx = 0.25f * (heatmap.at<float>(py, px + 2) - 2 * heatmap.at<float>(py, px) + heatmap.at<float>(py, px - 2));
+        float dxy = 0.25f * (heatmap.at<float>(py + 1, px + 1) - heatmap.at<float>(py - 1, px + 1) - heatmap.at<float>(py + 1, px - 1) + heatmap.at<float>(py - 1, px - 1));
+        float dyy = 0.25f * (heatmap.at<float>(py + 2, px) - 2 * heatmap.at<float>(py, px) + heatmap.at<float>(py - 2, px));
+
+        derivative << dx, dy;
+        hessian << dxx, dxy, dxy, dyy;
+
+        if (std::abs(hessian.determinant()) > 1e-10) {
+            Eigen::Vector2f offset = -hessian.inverse() * derivative;
+            result[0] += offset(0);
+            result[1] += offset(1);
+        }
+    }
+
+    return result;
+}
+
+cv::Mat Demo::convert_tensor_to_mat(float* tensor_data, const std::vector<int64_t>& dims) {
+    if (dims.size() != 4) {
+        throw std::runtime_error("Expected 4D tensor");
+    }
+
+    int batch_size = dims[0];
+    int channels = dims[1];
+    int height = dims[2];
+    int width = dims[3];
+
+    cv::Mat result(height, width, CV_32FC(channels));
+    memcpy(result.data, tensor_data, batch_size * channels * height * width * sizeof(float));
+
+    return result;
 }
 
 bool Demo::ProcessVideo(
@@ -502,7 +744,7 @@ bool Demo::ProcessImage(const cv::Mat& image, cv::Mat& output_image) {
         Ort::ThrowOnError(g_ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &memory_info));
 
         // CUDA
-        // g_ort->CreateMemoryInfo("Cuda", OrtAllocatorType::OrtDeviceAllocator, 0, OrtMemTypeDefault, &memory_info);
+        //Ort::ThrowOnError(g_ort->CreateMemoryInfo("Cuda", OrtAllocatorType::OrtDeviceAllocator, 0, OrtMemTypeDefault, &memory_info));
 
 
         OrtValue* input_tensor = nullptr;
@@ -515,7 +757,6 @@ bool Demo::ProcessImage(const cv::Mat& image, cv::Mat& output_image) {
             ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT,
             &input_tensor));
 
-        // Inference
         std::vector<OrtValue*> outputs;
         if (model_name == "vitpose") {
             outputs.resize(1);  // ViTPose has 1 output
@@ -524,6 +765,7 @@ bool Demo::ProcessImage(const cv::Mat& image, cv::Mat& output_image) {
             outputs.resize(2);  // HigherHRNet has 2 outputs
         }
 
+        // Inference
         Ort::ThrowOnError(g_ort->Run(
             static_cast<OrtSession*>(*session_),
             nullptr,
@@ -564,124 +806,119 @@ bool Demo::ProcessImage(const cv::Mat& image, cv::Mat& output_image) {
     }
 }
 
-std::pair<std::vector<std::vector<std::vector<float>>>, std::vector<std::vector<std::vector<float>>>>
-Demo::get_final_preds_no_transform(const std::vector<cv::Mat>& heatmaps) {
-    PredictionResult pred_result = get_max_preds(heatmaps);
-    std::vector<cv::Mat> heatmaps_processed = heatmaps;
+torch::Tensor Demo::convert_ort_to_torch(OrtValue* ort_tensor) {
+    float* tensor_data = nullptr;
+    g_ort->GetTensorMutableData(ort_tensor, (void**)&tensor_data);
 
-    // post-processing
-    heatmaps_processed = gaussian_blur(heatmaps_processed, 11);
+    OrtTensorTypeAndShapeInfo* tensor_info;
+    g_ort->GetTensorTypeAndShape(ort_tensor, &tensor_info);
 
-    for (auto& heatmap : heatmaps_processed) {
-        cv::max(heatmap, 1e-10, heatmap);
-        cv::log(heatmap, heatmap);
+    std::vector<int64_t> dims;
+    size_t dim_count;
+    g_ort->GetDimensionsCount(tensor_info, &dim_count);
+    dims.resize(dim_count);
+    g_ort->GetDimensions(tensor_info, dims.data(), dim_count);
+
+    torch::Tensor torch_tensor = torch::from_blob(tensor_data, dims, torch::kFloat32);
+
+    g_ort->ReleaseTensorTypeAndShapeInfo(tensor_info);
+    return torch_tensor;
+}
+
+std::tuple<std::vector<torch::Tensor>, std::vector<torch::Tensor>, std::vector<torch::Tensor>>
+Demo::get_multi_stage_outputs_onnx(
+    const std::vector<OrtValue*>& outputs,
+    const std::vector<int64_t>* size_projected) {
+
+    std::vector<torch::Tensor> torch_outputs;
+    std::vector<torch::Tensor> heatmaps;
+    std::vector<torch::Tensor> tags;
+
+    torch::Tensor heatmaps_avg = torch::zeros({});
+    int num_heatmaps = 0;
+
+    // Convert and process original outputs
+    for (size_t i = 0; i < outputs.size(); i++) {
+        torch::Tensor output = convert_ort_to_torch(outputs[i]);
+
+        if (outputs.size() > 1 && i != outputs.size() - 1) {
+            auto target_tensor = convert_ort_to_torch(outputs[1]);
+            output = torch::nn::functional::interpolate(
+                output,
+                torch::nn::functional::InterpolateFuncOptions()
+                .size(std::vector<int64_t>{target_tensor.size(2), target_tensor.size(3)})
+                .mode(torch::kBilinear)
+                .align_corners(false));
+        }
+
+
+        if (i == 0) {
+            heatmaps_avg = output.slice(1, 0, 17);
+        }
+        else {
+            heatmaps_avg += output.slice(1, 0, 17);
+        }
+        num_heatmaps += 1;
+
+        if (i == 0) {
+            tags.push_back(output.slice(1, 17));
+        }
+
+        torch_outputs.push_back(output);
     }
 
-    // Apply taylor expansion
-    for (size_t n = 0; n < pred_result.coords.size(); n++) {
-        for (size_t p = 0; p < pred_result.coords[n].size(); p++) {
-            std::vector<float> refined_coord = taylor(heatmaps_processed[n], pred_result.coords[n][p]);
-            pred_result.coords[n][p] = refined_coord;
+    if (num_heatmaps > 0) {
+        heatmaps.push_back(heatmaps_avg / num_heatmaps);
+    }
+
+    // Resize if size_projected is provided
+    if (size_projected != nullptr) {
+        for (auto& hm : heatmaps) {
+            hm = torch::nn::functional::interpolate(
+                hm,
+                torch::nn::functional::InterpolateFuncOptions()
+                .size(std::vector<int64_t>{ (*size_projected)[1], (*size_projected)[0] })
+                .mode(torch::kBilinear)
+                .align_corners(false)
+            );
+        }
+
+        for (auto& tag : tags) {
+            tag = torch::nn::functional::interpolate(
+                tag,
+                torch::nn::functional::InterpolateFuncOptions()
+                .size(std::vector<int64_t>{ (*size_projected)[1], (*size_projected)[0] })
+                .mode(torch::kBilinear)
+                .align_corners(false)
+            );
         }
     }
 
-    return std::make_pair(pred_result.coords, pred_result.maxvals);
+    return std::make_tuple(torch_outputs, heatmaps, tags);
 }
 
-PredictionResult Demo::get_max_preds(const std::vector<cv::Mat>& heatmaps) {
-    PredictionResult result;
-    int batch_size = heatmaps.size();
-    int num_joints = heatmaps[0].rows;
-    int width = 48;
+std::pair<torch::Tensor, std::vector<torch::Tensor>>
+Demo::aggregate_results_onnx(
+    std::vector<torch::Tensor>& tags_list,
+    const std::vector<torch::Tensor>& heatmaps,
+    const std::vector<torch::Tensor>& tags) {
 
-    result.coords.resize(batch_size, std::vector<std::vector<float>>(num_joints, std::vector<float>(2)));
-    result.maxvals.resize(batch_size, std::vector<std::vector<float>>(num_joints, std::vector<float>(1)));
+    // Add each tag tensor to tags_list with an extra dimension
+    for (const auto& tms : tags) {
+        tags_list.push_back(tms.unsqueeze(4));
+    }
 
-    for (int n = 0; n < batch_size; n++) {
-        for (int p = 0; p < num_joints; p++) {
-            cv::Point maxLoc;
-            double maxVal;
-            cv::minMaxLoc(heatmaps[n].row(p), nullptr, &maxVal, nullptr, &maxLoc);
-
-            result.maxvals[n][p][0] = maxVal;
-            result.coords[n][p][0] = maxLoc.x % width;
-            result.coords[n][p][1] = maxLoc.x / width;
-
-            if (maxVal <= 0) {
-                result.coords[n][p][0] = 0.0f;
-                result.coords[n][p][1] = 0.0f;
-            }
+    // Average the heatmaps
+    torch::Tensor heatmaps_avg;
+    if (!heatmaps.empty()) {
+        // If we have flip augmentation, average the heatmaps
+        if (heatmaps.size() > 1) {
+            heatmaps_avg = (heatmaps[0] + heatmaps[1]) / 2.0;
+        }
+        else {
+            heatmaps_avg = heatmaps[0];
         }
     }
 
-    return result;
-}
-
-std::vector<cv::Mat> Demo::gaussian_blur(std::vector<cv::Mat>& heatmaps, int kernel) {
-    int border = (kernel - 1) / 2;
-
-    for (size_t i = 0; i < heatmaps.size(); i++) {
-        double origin_max;
-        cv::minMaxLoc(heatmaps[i], nullptr, &origin_max);
-
-        cv::Mat padded;
-        cv::copyMakeBorder(heatmaps[i], padded, border, border, border, border, cv::BORDER_CONSTANT, 0);
-        cv::GaussianBlur(padded, padded, cv::Size(kernel, kernel), 0);
-
-        cv::Mat cropped = padded(cv::Range(border, padded.rows - border),
-            cv::Range(border, padded.cols - border));
-
-        double current_max;
-        cv::minMaxLoc(cropped, nullptr, &current_max);
-        cropped *= origin_max / current_max;
-
-        heatmaps[i] = cropped.clone();
-    }
-
-    return heatmaps;
-}
-
-std::vector<float> Demo::taylor(const cv::Mat& heatmap, const std::vector<float>& coord) {
-    std::vector<float> result = coord;
-    int px = static_cast<int>(coord[0]);
-    int py = static_cast<int>(coord[1]);
-
-    if (1 < px && px < heatmap.cols - 2 && 1 < py && py < heatmap.rows - 2) {
-        Eigen::Matrix2f hessian;
-        Eigen::Vector2f derivative;
-
-        float dx = 0.5f * (heatmap.at<float>(py, px + 1) - heatmap.at<float>(py, px - 1));
-        float dy = 0.5f * (heatmap.at<float>(py + 1, px) - heatmap.at<float>(py - 1, px));
-        float dxx = 0.25f * (heatmap.at<float>(py, px + 2) - 2 * heatmap.at<float>(py, px) + heatmap.at<float>(py, px - 2));
-        float dxy = 0.25f * (heatmap.at<float>(py + 1, px + 1) - heatmap.at<float>(py - 1, px + 1) -
-            heatmap.at<float>(py + 1, px - 1) + heatmap.at<float>(py - 1, px - 1));
-        float dyy = 0.25f * (heatmap.at<float>(py + 2, px) - 2 * heatmap.at<float>(py, px) + heatmap.at<float>(py - 2, px));
-
-        derivative << dx, dy;
-        hessian << dxx, dxy, dxy, dyy;
-
-        if (std::abs(hessian.determinant()) > 1e-10) {
-            Eigen::Vector2f offset = -hessian.inverse() * derivative;
-            result[0] += offset(0);
-            result[1] += offset(1);
-        }
-    }
-
-    return result;
-}
-
-cv::Mat Demo::convert_tensor_to_mat(float* tensor_data, const std::vector<int64_t>& dims) {
-    if (dims.size() != 4) {
-        throw std::runtime_error("Expected 4D tensor");
-    }
-
-    int batch_size = dims[0];
-    int channels = dims[1];
-    int height = dims[2];
-    int width = dims[3];
-
-    cv::Mat result(height, width, CV_32FC(channels));
-    memcpy(result.data, tensor_data, batch_size * channels * height * width * sizeof(float));
-
-    return result;
+    return { heatmaps_avg, tags_list };
 }

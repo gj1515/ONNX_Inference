@@ -28,12 +28,13 @@ bool process_file(pose::Demo& pose_detector, const std::string& input_path, cons
 
 int main() {
     // Set parameters
-    const std::string model_path = "D:/Dev/Project/Pose/weights/2d/coco/vitpose/trained/192x256/export_0113_checkpoint_epoch_77.onnx";
+    const std::string model_path = "D:/Dev/Project/Pose/weights/2d/coco/HigherHRNet/export_model_best_512x512.onnx";
     // "D:/Dev/Project/Pose/weights/2d/coco/vitpose/trained/192x256/export_0113_checkpoint_epoch_77.onnx", "D:/Dev/Project/Pose/weights/2d/coco/HigherHRNet/export_model_best_512x512.onnx"
-    const std::string input_path = "D:/Dev/Dataset/inputs/images/single/";
+    const std::string input_path = "D:/Dev/Dataset/inputs/videos/single/";
     // "D:/Dev/Dataset/inputs/images/single/";, "D:/Dev/Dataset/inputs/videos/single/";
-    const std::string output_path = "D:/test/";
-    const std::string model_name = "vitpose";
+    const std::string output_path = "D:/test/HigherHRNet/0224/release/single/";
+    const std::string model_name = "higherhrnet";
+    // "higherhrnet", "vitpose"
 
     // Initialize pose detector
     pose::Demo pose_detector;
